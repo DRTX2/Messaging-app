@@ -2,9 +2,29 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ChatController;
 
-Route::middleware('auth:sanctum')->group(function(){
-    Route::get('/chat', [ChatController::class, 'index']);
-    Route::get('/chat/{user}', [ChatController::class, 'show']);
-    Route::post('/chat/{user}', [ChatController::class, 'store']);
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login']);
+
+Route::middleware('auth:api')->group(function(){
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/refresh', [AuthController::class, 'refresh']);
+    Route::get('/me', [AuthController::class, 'me']);
+
+    // Chat routes
+    Route::prefix('chat')->group(function () {
+        Route::get('/', [ChatController::class, 'users']);
+        Route::get('/unread-count', [ChatController::class, 'unreadCount']);
+        
+        // Specific message actions
+        Route::post('/messages/{message}/favorite', [ChatController::class, 'toggleFavorite']);
+        Route::delete('/messages/{message}', [ChatController::class, 'deleteMessage']);
+        
+        // User-specific actions
+        Route::post('/{user}/clear', [ChatController::class, 'clear']);
+        Route::get('/{user}', [ChatController::class, 'messages']);
+        Route::post('/{user}', [ChatController::class, 'send']);
+    });
 });
