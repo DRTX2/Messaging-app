@@ -1,43 +1,43 @@
-# Messenger Project
+# Nexus Messenger Project
 
-An advanced real-time messaging application built with Angular and Laravel (PostgreSQL).
+An advanced **enterprise-grade real-time messaging** application built with Angular 18 and Laravel 12.
 
-![Dashboard](docs/imgs/Screenshot_20260106_001740.png)
+![Dashboard](frontend/public/assets/nexus-logo.png)
 
 ## Description
 
-This project is a full-stack messaging platform that enables users to communicate in real-time. It features a modern, responsive UI inspired by top-tier messaging apps, complete with authentication, secure API communication, and dynamic interactions.
+Nexus is a premium full-stack messaging platform that enables seamless real-time communication. It features a modern, responsive UI with glassmorphism effects, secure authentication, and a robust backend powered by Laravel Reverb for instant interactions.
 
 ## Features
 
+-   **Real-time Communication**: Powered by **Laravel Reverb (WebSockets)** for instant message delivery.
+-   **Enterprise Groups**: Create and manage group conversations with multiple participants.
+-   **Rich Media**: Support for image previews and file attachments with professional UI.
 -   **Authentication**: Secure Login and Registration using JWT (JSON Web Tokens).
--   **Conversation List**: View all available users and recent message snippets.
--   **Real-time Chat**: Send and receive messages instantly (polling mechanism currently, expandable to WebSockets).
+-   **Advanced UI/UX**:
+    -   Smooth auto-scroll to latest messages.
+    -   Custom minimalist scrollbars.
+    -   Typing indicators ("User is typing...").
+    -   Online/Offline presence status.
 -   **Message Management**:
+    -   Favorite messages (starred).
     -   Delete specific messages.
     -   Clear entire conversations.
-    -   Mark messages as "Favorite" (starred).
--   **User Presence**: Simulated Online/Offline status.
--   **Responsive Design**: Mobile-first approach using Tailwind CSS.
--   **Keyboard Shortcuts**: Press `ESC` to close the active chat.
+-   **Responsive Design**: Sleek dark mode interface using Tailwind CSS v4.
 
 ## Architecture
 
-The project follows a decoupled architecture separating the client and server logic:
-
 ### Frontend
--   **Framework**: Angular 19+ (Signals for state management).
--   **Styling**: Tailwind CSS v4.
--   **HTTP Client**: Angular `HttpClient` with Interceptors for JWT handling.
--   **Structure**:
-    -   `AuthService`: Manages user sessions.
-    -   `ChatService`: API interaction for messages and users.
+-   **Framework**: Angular 18+ (Signals for reactive state management).
+-   **Styling**: Tailwind CSS v4 + Vanilla CSS for custom animations.
+-   **Real-time**: Laravel Echo + Pusher (via Reverb).
+-   **Structure**: Features-based modular architecture.
 
 ### Backend
--   **Framework**: Laravel 11.
+-   **Framework**: Laravel 12.
+-   **Real-time Server**: Laravel Reverb.
 -   **Database**: PostgreSQL.
--   **Authentication**: `laravel/sanctum` and `php-open-source-saver/jwt-auth`.
--   **API**: RESTful endpoints for Chat and Auth.
+-   **Authentication**: JWT Auth.
 
 ## Installation
 
@@ -45,53 +45,42 @@ The project follows a decoupled architecture separating the client and server lo
 -   Docker & Docker Compose
 -   Or manually: PHP 8.2+, Node.js 20+, PostgreSQL.
 
-### Using Docker (Recommended)
+### 🚀 Running the Development stack
 
-1.  **Clone the repository:**
+The project includes a custom Artisan command to start both the API and WebSocket servers simultaneously.
+
+#### Backend
+1.  Navigate to `backend/`.
+2.  Install dependencies: `composer install`.
+3.  Configure `.env` (copy from `.env.example`).
+4.  Run migrations: `php artisan migrate`.
+5.  **Start everything:**
     ```bash
-    git clone https://github.com/yourusername/messenger.git
-    cd messenger
+    php artisan serve:all
     ```
+    *This starts the API on port 8000 and Reverb on port 8080.*
 
-2.  **Start the application:**
+#### Frontend
+1.  Navigate to `frontend/`.
+2.  Install: `pnpm install` or `npm install`.
+3.  Start: `pnpm start` or `npm start`.
+
+---
+
+### Using Docker (Production-ready)
+
+1.  **Start containers:**
     ```bash
     docker-compose up -d --build
     ```
-    This will start the Database, Backend (on port 8000), and Frontend (on port 4200).
-
-3.  **Setup Backend:**
-    Access the backend container to run migrations:
+2.  **Initialize database:**
     ```bash
-    docker-compose exec backend composer install
     docker-compose exec backend php artisan migrate
     docker-compose exec backend php artisan jwt:secret
     ```
 
-4.  **Access the App:**
-    Open `http://localhost:4200` in your browser.
+## 🛠 Development Commands
 
-### Manual Installation
-
-#### Backend
-1.  Navigate to `backend/`.
-2.  Copy `.env.example` to `.env` and configure your Database.
-3.  Run `composer install`.
-4.  Run `php artisan key:generate`.
-5.  Run `php artisan migrate`.
-6.  Start server: `php artisan serve`.
-
-#### Frontend
-1.  Navigate to `frontend/`.
-2.  Run `pnpm install`.
-3.  Start dev server: `pnpm start`.
-
-## Screenshots
-
-| Empty Chat State | Active Chat View |
-|-----------|-------------|
-| ![Chat](docs/imgs/Screenshot_20260106_001740.png) | ![Mobile](docs/imgs/Screenshot_20260106_001800.png) |
-
-## Development
-
--   **Frontend-only**: `docker-compose -f docker-compose.frontend.yml up`
--   **Backend-only**: `docker-compose -f docker-compose.backend.yml up`
+-   **Start API + WebSockets**: `php artisan serve:all`
+-   **Frontend Dev**: `npm run start`
+-   **Build Production**: `npm run build`
