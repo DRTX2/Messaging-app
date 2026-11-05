@@ -52,19 +52,24 @@ export class ChatService {
   // MESSAGES
   // ──────────────────────────────────────────────────────────────
 
-  getMessages(userId: number): Observable<ApiResponse<Message[]>> {
+ /** Get or create the private conversation with a user. */
+  openDirectConversation(userId: number): Observable<ApiResponse<Conversation>> {
+    return this.http.post<ApiResponse<Conversation>>(`${this.apiUrl}/conversations/direct`, { user_id: userId });
+  }
+
+  getMessages(conversationId: number): Observable<ApiResponse<Message[]>> {
     this.isLoadingMessages.set(true);
-    return this.http.get<ApiResponse<Message[]>>(`${this.apiUrl}/chat/${userId}`);
+    return this.http.get<ApiResponse<Message[]>>(`${this.apiUrl}/conversations/${conversationId}/messages`);
   }
 
   sendMessage(
-    userId: number, 
+    conversationId: number, 
     message: string, 
     attachmentIds: number[] = [],
     requestId?: string
   ): Observable<ApiResponse<Message>> {
     this.isSending.set(true);
-    return this.http.post<ApiResponse<Message>>(`${this.apiUrl}/chat/${userId}`, {
+    return this.http.post<ApiResponse<Message>>(`${this.apiUrl}/conversations/${conversationId}/messages`, {
       message,
       attachment_ids: attachmentIds,
       request_id: requestId
@@ -82,8 +87,8 @@ export class ChatService {
     );
   }
 
-  clearConversation(userId: number): Observable<ApiResponse<void>> {
-    return this.http.post<ApiResponse<void>>(`${this.apiUrl}/chat/${userId}/clear`, {});
+  clearConversation(conversationId: number): Observable<ApiResponse<void>> {
+    return this.http.post<ApiResponse<void>>(`${this.apiUrl}/conversations/${conversationId}/clear`, {});
   }
 
   // ──────────────────────────────────────────────────────────────

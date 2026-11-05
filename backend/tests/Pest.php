@@ -41,7 +41,8 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/** Id of the (get-or-create) private conversation between two users. */
+function dmWith(App\Models\User $a, App\Models\User $b): int
 {
-    // ..
+    return test()->actingAs($a, 'api')->postJson('/api/conversations/direct', ['user_id' => $b->id])->json('data.id');
 }

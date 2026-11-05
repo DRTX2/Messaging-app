@@ -87,13 +87,13 @@ export class WebSocketService {
     const channel = this.echo.private(`conversation.${conversationId}`);
     
     channel.listen('MessageSent', (event: any) => {
-      console.log('[WebSocket] Message received:', event);
+      console.debug('[WebSocket] Message received');
       onMessage(event.message);
     });
 
     if (onTyping) {
       channel.listen('.UserTyping', (event: any) => {
-        console.log('[WebSocket] Typing indicator:', event);
+        console.debug('[WebSocket] Typing indicator');
         onTyping(event);
       });
     }
@@ -108,15 +108,17 @@ export class WebSocketService {
   }
 
   /**
-   * Subscribe to user's private channel for notifications
+   * Subscribe to the user's own channel: receives every message of every
+   * conversation they belong to (used to refresh the inbox).
    */
-  listenToUserChannel(userId: number, callback: (event: any) => void): void {
+  listenToInbox(userId: number, callback: (message: any) => void): void {
     if (!this.echo) return;
 
     this.echo.private(`App.Models.User.${userId}`)
-      .notification((notification: any) => {
-        console.log('[WebSocket] Notification:', notification);
-        callback(notification);
-      });
+      .listen('MessageSent', (event: any) => callback(event.message));
+  }
+
+  leaveInbox(userId: number): void {
+    this.echo?.leave(`App.Models.User.${userId}`);
   }
 }

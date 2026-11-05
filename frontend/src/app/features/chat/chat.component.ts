@@ -1,4 +1,4 @@
-import { Component, signal, computed, effect, inject, HostListener } from '@angular/core';
+import { Component, signal, computed, effect, inject, HostListener, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
@@ -34,7 +34,7 @@ import { CreateGroupModalComponent } from '../groups/create-group-modal/create-g
   ],
   templateUrl: './chat.component.html',
 })
-export class ChatComponent {
+export class ChatComponent implements OnInit {
   private authService = inject(AuthService);
   private chatService = inject(ChatService);
   private webSocketService = inject(WebSocketService);
@@ -79,10 +79,11 @@ export class ChatComponent {
     return 'Several people are typing...';
   });
 
-  constructor() {
-    // Initialize WebSocket on component load
-    this.webSocketService.connect();
+  ngOnInit(): void {
+    void this.webSocketService.connect();
+  }
 
+  constructor() {
     // Load conversations
     effect(() => {
       if (this.currentUser()) {
@@ -90,10 +91,19 @@ export class ChatComponent {
       }
     });
 
-    // Real-time subscription management
+    // Inbox updates: any message in any of my conversations refreshes the list
+    effect((onCleanup) => {
+      const userId = this.currentUser()?.id;
+      if (!userId || !this.webSocketService.isConnected()) return;
+
+      this.webSocketService.listenToInbox(userId, () => this.refreshInbox());
+      onCleanup(() => this.webSocketService.leaveInbox(userId));
+    });
+
+    // Real-time subscription management (re-runs once the socket is connected)
     effect((onCleanup) => {
       const conversationId = this.selectedConversationId();
-      if (conversationId && conversationId > 0) {
+      if (conversationId && conversationId > 0 && this.webSocketService.isConnected()) {
         // Subscribe to messages AND typing events
         this.webSocketService.listenToConversation(
           conversationId, 
@@ -126,7 +136,28 @@ export class ChatComponent {
   }
 
   selectConversation(id: number): void {
+    // Negative id = a user from search results with no conversation yet
+    if (id < 0) {
+      this.openDirectConversation(-id);
+      return;
+    }
     this.selectedConversationId.set(id);
+  }
+
+  private openDirectConversation(userId: number): void {
+    this.chatService.openDirectConversation(userId).subscribe({
+      next: (res) => {
+        this.searchQuery.set('');
+        this.isSearching.set(false);
+        this.loadConversations();
+        this.selectedConversationId.set(res.data.id);
+      }
+    });
+  }
+
+  /** Reload the inbox unless the user is looking at search results. */
+  private refreshInbox(): void {
+    if (!this.isSearching()) this.loadConversations();
   }
 
   closeChat(): void {
@@ -151,15 +182,7 @@ export class ChatComponent {
   }
 
   loadMessages(conversationId: number): void {
-    if (conversationId < 0) {
-      this.currentMessages.set([]);
-      return;
-    }
-
-    const conv = this.conversations().find(c => c.id === conversationId);
-    if (!conv) return;
-
-    this.chatService.getMessages(conv.user.id).subscribe({
+    this.chatService.getMessages(conversationId).subscribe({
       next: (res) => {
         this.chatService.isLoadingMessages.set(false);
         if (res.success) {
@@ -175,16 +198,13 @@ export class ChatComponent {
     const attachments = this.pendingAttachments();
     const convId = this.selectedConversationId();
 
-    if ((!text.trim() && attachments.length === 0) || !convId) return;
-
-    const conv = this.conversations().find(c => c.id === convId);
-    if (!conv) return;
+    if ((!text.trim() && attachments.length === 0) || !convId || this.isSending()) return;
 
     this.isSending.set(true);
     const attachmentIds = attachments.map(a => a.id);
     const requestId = generateUUID();
 
-    this.chatService.sendMessage(conv.user.id, text, attachmentIds, requestId).subscribe({
+    this.chatService.sendMessage(convId, text, attachmentIds, requestId).subscribe({
       next: (res) => {
         this.isSending.set(false);
         this.messageText.set('');
@@ -198,9 +218,7 @@ export class ChatComponent {
           }
         }
 
-        if (convId < 0) {
-          this.loadConversations();
-        }
+        this.refreshInbox();
       },
       error: () => this.isSending.set(false)
     });
@@ -245,13 +263,10 @@ export class ChatComponent {
 
   onClearChat(): void {
     const convId = this.selectedConversationId();
-    if (!convId || convId < 0) return;
-
-    const conv = this.conversations().find(c => c.id === convId);
-    if (!conv) return;
+    if (!convId) return;
 
     if (confirm('Are you sure you want to clear this conversation?')) {
-      this.chatService.clearConversation(conv.user.id).subscribe({
+      this.chatService.clearConversation(convId).subscribe({
         next: () => {
           this.currentMessages.set([]);
           this.loadConversations();
@@ -298,12 +313,11 @@ export class ChatComponent {
   // ─────────────────────────────────────────────────────────────
 
   private handleRealTimeMessage(msg: any): void {
-    const current = this.currentMessages();
-    if (current.find(m => m.id === msg.id)) return;
+    if (msg.conversation_id !== this.selectedConversationId()) return;
+    if (this.currentMessages().some(m => m.id === msg.id)) return;
 
     const mapped = this.mapMessage(msg);
     this.currentMessages.update(msgs => [...msgs, mapped]);
-    this.loadConversations();
 
     // Clear typing indicator for the sender when they send a message
     this.typingUsers.update(users => 
@@ -342,7 +356,7 @@ export class ChatComponent {
    */
   onTyping(): void {
     const convId = this.selectedConversationId();
-    if (!convId || convId < 0) return;
+    if (!convId) return;
 
     // Debounce: only send typing event every 1 second
     if (this.typingDebounceTimeout) return;
@@ -359,7 +373,7 @@ export class ChatComponent {
    */
   onStopTyping(): void {
     const convId = this.selectedConversationId();
-    if (!convId || convId < 0) return;
+    if (!convId) return;
 
     clearTimeout(this.typingDebounceTimeout);
     this.typingDebounceTimeout = null;

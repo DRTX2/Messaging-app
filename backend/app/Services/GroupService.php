@@ -6,7 +6,9 @@ namespace App\Services;
 
 use App\Exceptions\BusinessException;
 use App\Models\Conversation;
-use App\Models\User;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 class GroupService
@@ -21,46 +23,45 @@ class GroupService
         ?string $avatarUrl = null,
         ?string $requestId = null
     ): Conversation {
-        if ($requestId) {
-            $cacheKey = "group_request_{$requestId}";
-            $existingGroupId = \Illuminate\Support\Facades\Cache::get($cacheKey);
-            if ($existingGroupId) {
-                return Conversation::findOrFail($existingGroupId);
+        if (! $requestId) {
+            return $this->persistGroup($creatorId, $name, $participantIds, $avatarUrl);
+        }
+
+        $key = "group_request:{$creatorId}:{$requestId}";
+
+        return Cache::lock("{$key}:lock", 10)->block(5, function () use ($key, $creatorId, $name, $participantIds, $avatarUrl) {
+            if ($existingId = Cache::get($key)) {
+                return Conversation::where('created_by', $creatorId)->findOrFail($existingId);
             }
-        }
 
-        // Ensure creator is not in the participant list (we'll add them separately as admin)
-        $participantIds = array_filter($participantIds, fn($id) => $id !== $creatorId);
+            $group = $this->persistGroup($creatorId, $name, $participantIds, $avatarUrl);
+            Cache::put($key, $group->id, now()->addHours(24));
 
-        // Create the conversation
-        $conversation = Conversation::create([
-            'uuid' => Str::uuid()->toString(),
-            'is_group' => true,
-            'name' => $name,
-            'avatar_url' => $avatarUrl,
-            'created_by' => $creatorId,
-            'last_message_at' => now(),
-        ]);
+            return $group;
+        });
+    }
 
-        // Add creator as admin
-        $conversation->participants()->attach($creatorId, [
-            'is_admin' => true,
-            'formatted_last_read_at' => now(),
-        ]);
+    private function persistGroup(int $creatorId, string $name, array $participantIds, ?string $avatarUrl): Conversation
+    {
+        $others = array_values(array_unique(array_diff(array_map('intval', $participantIds), [$creatorId])));
 
-        // Add other participants
-        foreach ($participantIds as $participantId) {
-            $conversation->participants()->attach($participantId, [
-                'is_admin' => false,
-                'formatted_last_read_at' => now(),
+        return DB::transaction(function () use ($creatorId, $name, $others, $avatarUrl) {
+            $conversation = Conversation::create([
+                'uuid' => Str::uuid()->toString(),
+                'is_group' => true,
+                'name' => $name,
+                'avatar_url' => $avatarUrl,
+                'created_by' => $creatorId,
+                'last_message_at' => now(),
             ]);
-        }
 
-        if ($requestId) {
-            \Illuminate\Support\Facades\Cache::put("group_request_{$requestId}", $conversation->id, now()->addHours(24));
-        }
+            $conversation->participants()->attach($creatorId, ['is_admin' => true, 'formatted_last_read_at' => now()]);
+            foreach ($others as $id) {
+                $conversation->participants()->attach($id, ['is_admin' => false, 'formatted_last_read_at' => now()]);
+            }
 
-        return $conversation;
+            return $conversation;
+        });
     }
 
     /**
@@ -71,13 +72,13 @@ class GroupService
         int $requesterId,
         array $userIds
     ): void {
+        Gate::authorize('addParticipants', $conversation);
         $this->ensureIsGroup($conversation);
-        \Illuminate\Support\Facades\Gate::authorize('addParticipants', $conversation);
 
         $existingIds = $conversation->participants()->pluck('users.id')->toArray();
 
         foreach ($userIds as $userId) {
-            if (!in_array($userId, $existingIds)) {
+            if (! in_array($userId, $existingIds)) {
                 $conversation->participants()->attach($userId, [
                     'is_admin' => false,
                     'formatted_last_read_at' => now(),
@@ -94,8 +95,8 @@ class GroupService
         int $requesterId,
         int $userIdToRemove
     ): void {
+        Gate::authorize('removeParticipant', $conversation);
         $this->ensureIsGroup($conversation);
-        \Illuminate\Support\Facades\Gate::authorize('removeParticipant', $conversation);
 
         if ($requesterId === $userIdToRemove) {
             throw new BusinessException('Use the leave endpoint to remove yourself.', 400);
@@ -109,14 +110,19 @@ class GroupService
      */
     public function leaveGroup(Conversation $conversation, int $userId): void
     {
+        Gate::authorize('leave', $conversation);
         $this->ensureIsGroup($conversation);
-        \Illuminate\Support\Facades\Gate::authorize('leave', $conversation);
 
+        $wasAdmin = $conversation->participants()->where('user_id', $userId)->where('is_admin', true)->exists();
         $conversation->participants()->detach($userId);
 
-        // If no participants left, soft delete the conversation
-        if ($conversation->participants()->count() === 0) {
+        $remaining = $conversation->participants();
+        if ($remaining->count() === 0) {
             $conversation->delete();
+        } elseif ($wasAdmin && ! $remaining->where('is_admin', true)->exists()) {
+            // Never leave a group without an admin: promote the longest-standing member
+            $next = $conversation->participants()->orderBy('conversation_participants.id')->first();
+            $conversation->participants()->updateExistingPivot($next->id, ['is_admin' => true]);
         }
     }
 
@@ -129,8 +135,8 @@ class GroupService
         ?string $name = null,
         ?string $avatarUrl = null
     ): Conversation {
+        Gate::authorize('update', $conversation);
         $this->ensureIsGroup($conversation);
-        \Illuminate\Support\Facades\Gate::authorize('update', $conversation);
 
         if ($name !== null) {
             $conversation->name = $name;
@@ -149,7 +155,7 @@ class GroupService
 
     private function ensureIsGroup(Conversation $conversation): void
     {
-        if (!$conversation->is_group) {
+        if (! $conversation->is_group) {
             throw new BusinessException('This operation is only allowed for group conversations.', 400);
         }
     }

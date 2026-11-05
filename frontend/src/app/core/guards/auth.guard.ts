@@ -15,8 +15,7 @@ export const authGuard: CanActivateFn = (route, state) => {
   }
 
   // Redirect to login page
-  router.navigate(['/login']);
-  return false;
+  return router.createUrlTree(['/login']);
 };
 
 /**
@@ -31,6 +30,5 @@ export const guestGuard: CanActivateFn = (route, state) => {
   }
 
   // Already logged in, redirect to chat
-  router.navigate(['/chat']);
-  return false;
+  return router.createUrlTree(['/chat']);
 };

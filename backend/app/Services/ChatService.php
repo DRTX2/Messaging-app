@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Events\MessageSent;
 use App\Exceptions\BusinessException;
+use App\Jobs\ProcessMessageAttachments;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 class ChatService
 {
     public function __construct(
-        private readonly PresenceService $presenceService
+        private readonly PresenceService $presenceService,
+        private readonly AttachmentService $attachmentService
     ) {}
 
     /**
@@ -29,10 +34,7 @@ class ChatService
             ->whereHas('participants', function (Builder $query) use ($userId) {
                 $query->where('user_id', $userId);
             })
-            ->with(['latestMessage', 'participants' => function($q) use ($userId) {
-                // Determine the "other" user for naming purposes in frontend
-                $q->where('user_id', '!=', $userId); 
-            }])
+            ->with(['latestMessage', 'participants'])
             ->orderByDesc('last_message_at')
             ->paginate($perPage);
     }
@@ -46,23 +48,16 @@ class ChatService
             throw new BusinessException('Cannot chat with yourself', 400);
         }
 
-        // 1. Check if conversation already exists
-        // We look for a conversation with exactly these 2 participants and is_group = false.
-        $conversation = Conversation::where('is_group', false)
-            ->whereHas('participants', function ($q) use ($authUserId) {
-                $q->where('user_id', $authUserId);
-            })
-            ->whereHas('participants', function ($q) use ($otherUserId) {
-                $q->where('user_id', $otherUserId);
-            })
-            ->first();
-
-        if ($conversation) {
-            return $conversation;
-        }
-
-        // 2. Create new if not exists
+        // Serialize concurrent first-messages of the same pair (prevents duplicate chats)
         return DB::transaction(function () use ($authUserId, $otherUserId) {
+            $pairKey = min($authUserId, $otherUserId).':'.max($authUserId, $otherUserId);
+            DB::select('select pg_advisory_xact_lock(hashtext(?))', ["dm:{$pairKey}"]);
+
+            $existing = $this->findPrivateConversation($authUserId, $otherUserId);
+            if ($existing) {
+                return $existing;
+            }
+
             $conversation = Conversation::create([
                 'uuid' => (string) Str::uuid(),
                 'is_group' => false,
@@ -80,66 +75,29 @@ class ChatService
         });
     }
 
+    private function findPrivateConversation(int $userA, int $userB): ?Conversation
+    {
+        return Conversation::where('is_group', false)
+            ->whereHas('participants', fn ($q) => $q->where('user_id', $userA))
+            ->whereHas('participants', fn ($q) => $q->where('user_id', $userB))
+            ->first();
+    }
+
     /**
      * Get messages for a specific conversation (Thread View)
      */
     public function getConversationMessages(int $userId, Conversation $conversation, int $perPage = 50): LengthAwarePaginator
     {
         // Security check via Policy
-        \Illuminate\Support\Facades\Gate::authorize('view', $conversation);
+        Gate::authorize('view', $conversation);
+
+        $clearedAt = $conversation->participants()->where('users.id', $userId)->first()?->pivot?->cleared_at;
 
         return $conversation->messages()
+            ->when($clearedAt, fn ($q) => $q->where('created_at', '>', $clearedAt))
             ->with(['sender:id,name,email', 'attachments', 'parent'])
             ->orderByDesc('created_at') // Latest first for chat UI (usually reversed in frontend)
             ->paginate($perPage);
-    }
-
-    /**
-     * Send a message to a USER (Legacy/Direct wrapper)
-     * This maintains the existing controller signature but uses the new engine.
-     */
-    public function sendMessageToUser(int $senderId, int $receiverId, string $content, ?array $attachmentIds = []): Message
-    {
-        // 1. Ensure conversation exists
-        $conversation = $this->getPrivateConversation($senderId, $receiverId);
-
-        // 2. Create Message
-        return DB::transaction(function () use ($conversation, $senderId, $content, $attachmentIds) {
-            $message = $conversation->messages()->create([
-                'sender_id' => $senderId,
-                'content' => $content,
-                'type' => empty($attachmentIds) ? 'text' : 'file', 
-            ]);
-
-            // 3. Link Attachments
-            if (!empty($attachmentIds)) {
-                (new AttachmentService())->linkAttachmentsToMessage($message->id, $attachmentIds);
-            }
-
-            // 4. Update Conversation Timestamp (to bump it to top of inbox)
-            $conversation->update(['last_message_at' => now()]);
-
-            $message->load(['sender', 'conversation', 'attachments']);
-            
-            // SIDE EFFECTS (MOVE OUT OF ATOMIC DB TRANSACTION FOR EVENTUAL CONSISTENCY)
-            DB::afterCommit(function () use ($message, $attachmentIds, $senderId, $conversation) {
-                // 5. Broadcast Real-time Event
-                \App\Events\MessageSent::dispatch($message);
-
-                // 6. Increment cache for all other participants
-                $conversation->participants()
-                    ->where('user_id', '!=', $senderId)
-                    ->pluck('user_id')
-                    ->each(fn($id) => $this->presenceService->incrementUnreadCount((int) $id));
-
-                // 7. Dispatch background job for heavy processing if attachments exist
-                if (!empty($attachmentIds)) {
-                    \App\Jobs\ProcessMessageAttachments::dispatch($message);
-                }
-            });
-
-            return $message;
-        });
     }
 
     /**
@@ -147,7 +105,7 @@ class ChatService
      */
     public function sendMessageToConversation(int $senderId, Conversation $conversation, string $content, array $attachmentIds = []): Message
     {
-        \Illuminate\Support\Facades\Gate::authorize('message', $conversation);
+        Gate::authorize('message', $conversation);
 
         return DB::transaction(function () use ($conversation, $senderId, $content, $attachmentIds) {
             $message = $conversation->messages()->create([
@@ -156,25 +114,25 @@ class ChatService
                 'type' => empty($attachmentIds) ? 'text' : 'file',
             ]);
 
-            if (!empty($attachmentIds)) {
-                (new AttachmentService())->linkAttachmentsToMessage($message->id, $attachmentIds);
+            if (! empty($attachmentIds)) {
+                $this->attachmentService->linkAttachmentsToMessage($message->id, $senderId, $attachmentIds);
             }
 
             $conversation->update(['last_message_at' => now()]);
             $message->load(['sender', 'conversation', 'attachments']);
-            
+
             DB::afterCommit(function () use ($message, $attachmentIds, $senderId, $conversation) {
-                \App\Events\MessageSent::dispatch($message);
+                MessageSent::dispatch($message);
 
                 // Increment unread cache for all except sender
                 $conversation->participants()
                     ->where('user_id', '!=', $senderId)
                     ->pluck('user_id')
-                    ->each(fn($id) => $this->presenceService->incrementUnreadCount((int) $id));
+                    ->each(fn ($id) => $this->presenceService->incrementUnreadCount((int) $id));
 
                 // Background processing
-                if (!empty($attachmentIds)) {
-                    \App\Jobs\ProcessMessageAttachments::dispatch($message);
+                if (! empty($attachmentIds)) {
+                    ProcessMessageAttachments::dispatch($message);
                 }
             });
 
@@ -191,51 +149,50 @@ class ChatService
             ->where('conversation_id', $conversationId)
             ->where('user_id', $userId)
             ->update(['formatted_last_read_at' => now()]);
-        
+
         // Invalidate cache
         $this->presenceService->clearUnreadCache($userId);
     }
-    
-    // --- Legacy Adapter Methods (keeping signatures valid for ChatController if possible) ---
 
-    // Note: Adjusted signature to match new controller usage
-    public function sendMessage(int $senderId, int $receiverId, string $content, array $attachments = [], ?string $requestId = null): Message
+    /**
+     * Idempotent send: a retried request_id returns the original message.
+     * The key is scoped to sender + conversation and guarded by an atomic lock,
+     * so concurrent retries cannot double-send nor leak another user's message.
+     */
+    public function sendIdempotent(int $senderId, Conversation $conversation, string $content, array $attachmentIds, ?string $requestId): Message
     {
-       if ($requestId) {
-           $cacheKey = "msg_request_{$requestId}";
-           // Semi-senior: We store the ID of the created message to return the same object if retried
-           $existingMessageId = \Illuminate\Support\Facades\Cache::get($cacheKey);
-           if ($existingMessageId) {
-               return Message::findOrFail($existingMessageId);
-           }
-       }
+        if (! $requestId) {
+            return $this->sendMessageToConversation($senderId, $conversation, $content, $attachmentIds);
+        }
 
-       $message = $this->sendMessageToUser($senderId, $receiverId, $content, $attachments);
+        $key = "msg_request:{$senderId}:{$conversation->id}:{$requestId}";
 
-       if ($requestId) {
-           \Illuminate\Support\Facades\Cache::put("msg_request_{$requestId}", $message->id, now()->addHours(24));
-       }
+        return Cache::lock("{$key}:lock", 10)->block(5, function () use ($key, $senderId, $conversation, $content, $attachmentIds) {
+            $existingId = Cache::get($key);
+            if ($existingId) {
+                return Message::where('sender_id', $senderId)
+                    ->where('conversation_id', $conversation->id)
+                    ->findOrFail($existingId);
+            }
 
-       return $message;
+            $message = $this->sendMessageToConversation($senderId, $conversation, $content, $attachmentIds);
+            Cache::put($key, $message->id, now()->addHours(24));
+
+            return $message;
+        });
     }
 
     public function getUsers(int $userId, int $perPage = 10, ?string $search = null): LengthAwarePaginator
     {
         return User::where('id', '!=', $userId)
             ->when($search, function ($query, $search) {
-                return $query->where(function($q) use ($search) {
+                return $query->where(function ($q) use ($search) {
                     $q->where('name', 'ilike', "%{$search}%")
-                      ->orWhere('email', 'ilike', "%{$search}%");
+                        ->orWhere('email', 'ilike', "%{$search}%");
                 });
             })
             ->orderBy('name')
             ->paginate($perPage);
-    }
-
-    public function getConversation(int $authUserId, int $otherUserId, int $perPage = 20): LengthAwarePaginator
-    {
-        $conversation = $this->getPrivateConversation($authUserId, $otherUserId);
-        return $this->getConversationMessages($authUserId, $conversation, $perPage);
     }
 
     public function getUnreadCount(int $userId): int
@@ -262,25 +219,25 @@ class ChatService
                 ->count();
         });
     }
-    
+
     public function deleteMessage(int $messageId, int $userId): bool
     {
         $message = Message::findOrFail($messageId);
-        
-        // Authorization via MessagePolicy
-        \Illuminate\Support\Facades\Gate::authorize('delete', $message);
+
+        Gate::authorize('delete', $message);
 
         return (bool) $message->delete();
     }
 
-    public function clearConversation(int $authUserId, int $otherUserId): bool
+    /**
+     * Hide the conversation history for this user only (the other side keeps theirs).
+     */
+    public function clearConversation(int $userId, Conversation $conversation): void
     {
-        $conversation = $this->getPrivateConversation($authUserId, $otherUserId);
-        
-        // Authorization via ConversationPolicy
-        \Illuminate\Support\Facades\Gate::authorize('clear', $conversation);
+        Gate::authorize('clear', $conversation);
 
-        return (bool) $conversation->messages()->delete(); 
+        $conversation->participants()->updateExistingPivot($userId, ['cleared_at' => now()]);
+        $this->presenceService->clearUnreadCache($userId);
     }
 
     public function toggleFavorite(int $messageId, int $userId): Message
@@ -288,10 +245,11 @@ class ChatService
         $message = Message::findOrFail($messageId);
 
         // Authorization via MessagePolicy
-        \Illuminate\Support\Facades\Gate::authorize('favorite', $message);
+        Gate::authorize('favorite', $message);
 
-        $message->is_favorite = !$message->is_favorite;
+        $message->is_favorite = ! $message->is_favorite;
         $message->save();
+
         return $message;
     }
 }

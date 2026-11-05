@@ -111,7 +111,7 @@ export class AuthService {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     this.currentUser.set(null);
-    this.router.navigate(['/login']);
+    void this.router.navigate(['/login']);
   }
 
   fetchCurrentUser(): void {

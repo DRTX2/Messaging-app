@@ -20,7 +20,7 @@ class AttachmentController extends Controller
      */
     public function store(UploadAttachmentRequest $request): JsonResponse
     {
-        $attachment = $this->attachmentService->upload($request->file('file'));
+        $attachment = $this->attachmentService->upload($request->file('file'), (int) auth()->id());
 
         return response()->json([
             'success' => true,

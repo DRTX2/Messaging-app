@@ -37,10 +37,11 @@
     <!-- Hidden file input -->
     <input 
       type="file" 
+      aria-label="Attach a file"
       #fileInput 
       (change)="onFileChange($event)" 
       class="hidden" 
-      accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+      accept="image/*,application/pdf,.docx,.xlsx,.txt,audio/mpeg,audio/wav"
     >
 
     <!-- Attach button -->
@@ -55,6 +56,7 @@
     
     <!-- Text input -->
     <textarea 
+      aria-label="Message"
       [ngModel]="messageText"
       (ngModelChange)="messageTextChange.emit($event)"
       (keydown)="onKeydown($event)"

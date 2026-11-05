@@ -17,8 +17,8 @@ class SendMessageRequest extends FormRequest
     {
         return [
             'request_id' => ['required', 'string', 'uuid'],
-            'message' => ['nullable', 'string', 'max:5000'],
-            'attachment_ids' => ['array', 'nullable'],
+            'message' => ['nullable', 'string', 'max:5000', 'required_without:attachment_ids'],
+            'attachment_ids' => ['nullable', 'array', 'max:10'],
             'attachment_ids.*' => ['integer', 'exists:attachments,id'],
         ];
     }

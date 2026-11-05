@@ -44,8 +44,6 @@ class GroupController extends Controller
      */
     public function addParticipants(Request $request, Conversation $conversation): JsonResponse
     {
-        $this->authorize('addParticipants', $conversation);
-
         $request->validate([
             'user_ids' => ['required', 'array', 'min:1'],
             'user_ids.*' => ['required', 'integer', 'exists:users,id'],
@@ -69,8 +67,6 @@ class GroupController extends Controller
      */
     public function removeParticipant(Request $request, Conversation $conversation, int $userId): JsonResponse
     {
-        $this->authorize('removeParticipant', $conversation);
-
         $this->groupService->removeParticipant(
             conversation: $conversation,
             requesterId: (int) auth()->id(),
@@ -88,8 +84,6 @@ class GroupController extends Controller
      */
     public function leave(Conversation $conversation): JsonResponse
     {
-        $this->authorize('leave', $conversation);
-
         $this->groupService->leaveGroup(
             conversation: $conversation,
             userId: (int) auth()->id()
@@ -106,8 +100,6 @@ class GroupController extends Controller
      */
     public function update(Request $request, Conversation $conversation): JsonResponse
     {
-        $this->authorize('update', $conversation);
-
         $request->validate([
             'name' => ['sometimes', 'string', 'min:2', 'max:100'],
             'avatar_url' => ['sometimes', 'nullable', 'url', 'max:500'],

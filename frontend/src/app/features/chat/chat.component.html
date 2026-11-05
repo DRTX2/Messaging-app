@@ -84,7 +84,7 @@
 <!-- Group Creation Modal -->
 @if (showGroupModal()) {
   <app-create-group-modal
-    (close)="showGroupModal.set(false)"
+    (closed)="showGroupModal.set(false)"
     (groupCreated)="onGroupCreated()">
   </app-create-group-modal>
 }
