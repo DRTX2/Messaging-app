@@ -24,6 +24,9 @@ class MessageSent implements ShouldBroadcastNow
      */
     public $message;
 
+    /** @var array<int, int> */
+    private array $participantIds;
+
     /**
      * Create a new event instance.
      */
@@ -31,30 +34,20 @@ class MessageSent implements ShouldBroadcastNow
     {
         // We broadcast the resource to ensure the frontend receives the exact same structure as the API
         $this->message = (new MessageResource($message))->resolve();
+        $this->participantIds = $message->conversation->participants()->pluck('users.id')->all();
     }
 
     /**
-     * Get the channels the event should broadcast on.
-     *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
+     * Conversation channel (open chat) + every participant's user channel (inbox refresh).
      */
     public function broadcastOn(): array
     {
-        // Broadcast to the specific conversation channel
-        // Channel name: conversation.{id}
-        // Ensure frontend subscribes to `private-conversation.{id}`
-        $conversationId = $this->message['conversation_id'] ?? null;
-        
-        if (!$conversationId) {
-             // Fallback for legacy DMs if any (though we pivoted)
-            return [
-                new PrivateChannel('user.' . $this->message['receiver_id']),
-                new PrivateChannel('user.' . $this->message['sender_id']),
-            ];
+        $channels = [new PrivateChannel('conversation.'.$this->message['conversation_id'])];
+
+        foreach ($this->participantIds as $userId) {
+            $channels[] = new PrivateChannel('App.Models.User.'.$userId);
         }
 
-        return [
-            new PrivateChannel('conversation.' . $conversationId),
-        ];
+        return $channels;
     }
 }

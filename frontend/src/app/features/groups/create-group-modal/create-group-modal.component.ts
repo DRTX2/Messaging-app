@@ -15,7 +15,7 @@ import { generateUUID } from '../../../shared/utils/uuid';
 export class CreateGroupModalComponent {
   private chatService = inject(ChatService);
 
-  @Output() close = new EventEmitter<void>();
+  @Output() closed = new EventEmitter<void>();
   @Output() groupCreated = new EventEmitter<void>();
 
   // State

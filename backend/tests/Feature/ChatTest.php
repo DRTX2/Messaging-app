@@ -1,63 +1,37 @@
 <?php
 
 use App\Models\User;
-use App\Models\Message;
+use Illuminate\Support\Str;
 
 test('authenticated user can send a message', function () {
-    $sender = User::factory()->create();
-    $receiver = User::factory()->create();
+    [$sender, $receiver] = User::factory()->count(2)->create();
 
-    $response = $this->actingAs($sender, 'api')
-        ->postJson("/api/chat/{$receiver->id}", [
-            'message' => 'Hello World'
-        ]);
+    $this->actingAs($sender, 'api')
+        ->postJson('/api/conversations/'.dmWith($sender, $receiver).'/messages', [
+            'message' => 'Hello World',
+            'request_id' => (string) Str::uuid(),
+        ])
+        ->assertStatus(201)
+        ->assertJson(['success' => true, 'message' => 'Message sent successfully']);
 
-    $response->assertStatus(201)
-        ->assertJson([
-            'success' => true,
-            'message' => 'Message sent successfully'
-        ]);
-
-    $this->assertDatabaseHas('messages', [
-        'sender_id' => $sender->id,
-        'receiver_id' => $receiver->id,
-        'content' => 'Hello World'
-    ]);
+    $this->assertDatabaseHas('messages', ['sender_id' => $sender->id, 'content' => 'Hello World']);
 });
 
-test('user cannot chat with themselves', function () {
+test('user cannot open a chat with themselves', function () {
     $user = User::factory()->create();
 
-    $response = $this->actingAs($user, 'api')
-        ->postJson("/api/chat/{$user->id}", [
-            'message' => 'Self talk'
-        ]);
-
-    $response->assertStatus(400)
-             ->assertJson([
-                 'success' => false,
-                 'message' => 'Cannot send messages to yourself'
-             ]);
+    $this->actingAs($user, 'api')
+        ->postJson('/api/conversations/direct', ['user_id' => $user->id])
+        ->assertStatus(400)
+        ->assertJson(['success' => false, 'message' => 'Cannot chat with yourself']);
 });
 
-test('can retrieve conversation', function () {
-    $user1 = User::factory()->create();
-    $user2 = User::factory()->create();
-    
-    Message::factory()->create([
-        'sender_id' => $user1->id,
-        'receiver_id' => $user2->id,
-        'content' => 'Hi there'
-    ]);
+test('can retrieve conversation messages', function () {
+    [$a, $b] = User::factory()->count(2)->create();
+    $id = dmWith($a, $b);
+    $this->actingAs($a, 'api')->postJson("/api/conversations/{$id}/messages", ['message' => 'Hi there', 'request_id' => (string) Str::uuid()]);
 
-    $response = $this->actingAs($user1, 'api')
-        ->getJson("/api/chat/{$user2->id}");
-
-    $response->assertStatus(200)
-        ->assertJsonStructure([
-            'data' => [
-                '*' => ['id', 'content', 'sender', 'receiver']
-            ],
-            'success'
-        ]);
+    $this->actingAs($b, 'api')->getJson("/api/conversations/{$id}/messages")
+        ->assertOk()
+        ->assertJsonStructure(['data' => ['*' => ['id', 'content', 'sender']], 'success']);
 });

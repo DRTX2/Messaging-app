@@ -22,17 +22,17 @@ test('idempotency prevents duplicate messages', function () {
 
     // First Request
     $response1 = $this->actingAs($sender, 'api')
-        ->postJson("/api/chat/{$receiver->id}", $payload);
-    
+        ->postJson('/api/conversations/'.dmWith($sender, $receiver).'/messages', $payload);
+
     $response1->assertStatus(201);
     $messageId = $response1->json('data.id');
 
     // Second Request (Retry)
     $response2 = $this->actingAs($sender, 'api')
-        ->postJson("/api/chat/{$receiver->id}", $payload);
-    
+        ->postJson('/api/conversations/'.dmWith($sender, $receiver).'/messages', $payload);
+
     $response2->assertStatus(201);
-    
+
     // Assert IDs match (same message returned)
     expect($response2->json('data.id'))->toBe($messageId);
 
@@ -47,27 +47,27 @@ test('sending message dispatches job and events via consistency', function () {
 
     $sender = User::factory()->create();
     $receiver = User::factory()->create();
-    
+
     // Create connection/conversation first to avoid "first message logic" noise if we want strict unit
     // But here we test E2E flow
-    
+
     // Using a file attachment needs "attachments" table existing
     // We assume factory or simple creation if checked
     // For now, testing text message first
-    
+
     $payload = [
         'request_id' => (string) Str::uuid(),
         'message' => 'Async Message',
     ];
 
     $response = $this->actingAs($sender, 'api')
-        ->postJson("/api/chat/{$receiver->id}", $payload);
+        ->postJson('/api/conversations/'.dmWith($sender, $receiver).'/messages', $payload);
 
     $response->assertStatus(201);
 
     // Verify Event Dispatched
     Event::assertDispatched(MessageSent::class);
-    
+
     // Verify Queue NOT dispatched (no attachments)
     Queue::assertNotPushed(ProcessMessageAttachments::class);
 });
@@ -92,9 +92,9 @@ test('group creation enforces policy and updates cache', function () {
             'data' => [
                 'name' => 'Test Group',
                 'is_group' => true,
-            ]
+            ],
         ]);
-        
+
     // Verify DB
     $this->assertDatabaseHas('conversations', ['name' => 'Test Group']);
     $this->assertDatabaseCount('conversation_participants', 3); // Creator + 2 others
@@ -114,21 +114,13 @@ test('unread count cache increments correctly', function () {
     $receiver = User::factory()->create();
 
     // Prime the cache first (so it exists to be incremented)
-    $service->getUnreadCount($receiver->id, fn() => 0);
+    $service->getUnreadCount($receiver->id, fn () => 0);
 
-    // Send message
     $this->actingAs($sender, 'api')
-        ->postJson("/api/chat/{$receiver->id}", [
+        ->postJson('/api/conversations/'.dmWith($sender, $receiver).'/messages', [
             'request_id' => (string) Str::uuid(),
-            'message' => 'Cache Test'
+            'message' => 'Cache Test',
         ])->assertStatus(201);
 
-    // Force manual increment (simulating the job/afterCommit if mocked)
-    // Note: The controller/service SHOULD increment it if we used the real service flow and cache existed.
-    // If the controller ran in the same process and cache store is array (shared), it would work.
-    // But let's verify explicit increment logic.
-    $service->incrementUnreadCount($receiver->id);
-    
-    // Expect 1 from manual + 1 from controller if it worked = 2. Or at least 1.
-    expect($service->getUnreadCount($receiver->id, fn() => 0))->toBeGreaterThanOrEqual(1);
+    expect($service->getUnreadCount($receiver->id, fn () => 99))->toBe(1);
 });

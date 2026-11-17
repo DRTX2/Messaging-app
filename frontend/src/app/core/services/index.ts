@@ -2,3 +2,4 @@
 export { AuthService } from './auth.service';
 export { ChatService } from './chat.service';
 export { WebSocketService } from './websocket.service';
+export { CallService } from './call.service';

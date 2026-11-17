@@ -8,16 +8,22 @@ use App\Http\Controllers\ChatController;
 
 Broadcast::routes(['middleware' => ['auth:api']]);
 
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::middleware('throttle:10,1')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+});
 
-Route::middleware('auth:api')->group(function(){
+Route::middleware(['auth:api', 'throttle:120,1'])->group(function(){
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::get('/me', [AuthController::class, 'me']);
 
     // Conversation routes (Inbox)
     Route::get('/conversations', [App\Http\Controllers\ConversationController::class, 'index']);
+    Route::post('/conversations/direct', [App\Http\Controllers\ConversationController::class, 'direct']);
+    Route::get('/conversations/{conversation}/messages', [App\Http\Controllers\ConversationController::class, 'messages']);
+    Route::post('/conversations/{conversation}/messages', [App\Http\Controllers\ConversationController::class, 'send']);
+    Route::post('/conversations/{conversation}/clear', [App\Http\Controllers\ConversationController::class, 'clear']);
     
     // Group routes
     Route::prefix('groups')->group(function () {
@@ -29,10 +35,14 @@ Route::middleware('auth:api')->group(function(){
     });
     
     // Attachment routes
-    Route::post('/attachments', [App\Http\Controllers\AttachmentController::class, 'store']);
+    Route::post('/attachments', [App\Http\Controllers\AttachmentController::class, 'store'])->middleware('throttle:30,1');
 
     // Typing indicator
     Route::post('/conversations/{conversation}/typing', [App\Http\Controllers\TypingController::class, 'typing']);
+
+    // Calls (WebRTC signalling; ICE candidates arrive in bursts, hence the higher limit)
+    Route::post('/conversations/{conversation}/calls/signal', [App\Http\Controllers\CallController::class, 'signal'])
+        ->withoutMiddleware('throttle:120,1')->middleware('throttle:600,1');
 
     // Chat routes
     Route::prefix('chat')->group(function () {
@@ -44,8 +54,5 @@ Route::middleware('auth:api')->group(function(){
         Route::delete('/messages/{message}', [ChatController::class, 'deleteMessage']);
         
         // User-specific actions
-        Route::post('/{user}/clear', [ChatController::class, 'clear']);
-        Route::get('/{user}', [ChatController::class, 'messages']);
-        Route::post('/{user}', [ChatController::class, 'send']);
     });
 });

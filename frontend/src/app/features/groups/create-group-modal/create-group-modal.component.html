@@ -1,4 +1,4 @@
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" (click)="close.emit()">
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" (click)="closed.emit()">
   <div 
     class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-[fadeIn_0.2s_ease-out]" 
     (click)="$event.stopPropagation()">
@@ -7,7 +7,7 @@
     <div class="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
       <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Create New Group</h2>
       <button 
-        (click)="close.emit()" 
+        (click)="closed.emit()" 
         class="p-1 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 transition-colors">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
           <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
@@ -19,10 +19,11 @@
     <div class="p-4 space-y-4">
       <!-- Group Name -->
       <div>
-        <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+        <label for="group-name" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
           Group Name
         </label>
         <input 
+          id="group-name"
           type="text" 
           placeholder="Enter group name..." 
           [ngModel]="groupName()" 
@@ -33,10 +34,10 @@
       
       <!-- User Selection -->
       <div>
-        <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+        <span class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
           Select Participants 
           <span class="text-indigo-600">({{ selectedUsers().length }} selected)</span>
-        </label>
+        </span>
         <div class="max-h-48 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg divide-y divide-zinc-100 dark:divide-zinc-800">
           @if (isLoading()) {
             <div class="p-4 text-center text-zinc-500 text-sm">Loading users...</div>
@@ -72,7 +73,7 @@
     <!-- Footer -->
     <div class="p-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-2">
       <button 
-        (click)="close.emit()" 
+        (click)="closed.emit()" 
         class="px-4 py-2 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
         Cancel
       </button>

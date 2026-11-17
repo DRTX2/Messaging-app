@@ -16,12 +16,8 @@ class UploadAttachmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => [
-                'required', 
-                'file', 
-                'max:20480', // 20MB Max
-                'mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt,zip,mp3,wav'
-            ],
+            // 20MB cap. Macro-capable legacy Office formats and archives are not accepted.
+            'file' => ['required', 'file', 'max:20480', 'mimes:jpg,jpeg,png,gif,webp,pdf,docx,xlsx,txt,mp3,wav'],
         ];
     }
 }

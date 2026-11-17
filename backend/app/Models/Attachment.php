@@ -13,6 +13,7 @@ class Attachment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'user_id',
         'message_id',
         'original_name',
         'mime_type',

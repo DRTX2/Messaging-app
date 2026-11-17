@@ -40,6 +40,7 @@
       </svg>
       <input 
         type="text" 
+        aria-label="Search people"
         placeholder="Search people..." 
         [ngModel]="searchQuery"
         (ngModelChange)="searchChanged.emit($event)"

@@ -6,44 +6,40 @@ namespace App\Services;
 
 use App\Models\Attachment;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class AttachmentService
 {
     /**
-     * Store an uploaded file and create an Attachment record.
-     * Note: Returns an "Orphaned" attachment (message_id = null)
+     * Store an uploaded file and create an orphaned Attachment owned by $userId.
+     * Requires `php artisan storage:link` for public URLs.
      */
-    public function upload(UploadedFile $file): Attachment
+    public function upload(UploadedFile $file, int $userId): Attachment
     {
-        $uuid = (string) Str::uuid();
-        $filename = $uuid . '.' . $file->getClientOriginalExtension();
-        
-        // Store in storage/app/public/attachments
-        // Ensure you run: php artisan storage:link
-        $path = $file->storeAs('attachments', $filename, 'public');
+        // Extension is guessed from file content, never trusted from the client
+        $filename = Str::uuid().'.'.$file->extension();
 
         return Attachment::create([
+            'user_id' => $userId,
             'original_name' => $file->getClientOriginalName(),
             'mime_type' => $file->getMimeType(),
-            'path' => $path,
+            'path' => $file->storeAs('attachments', $filename, 'public'),
             'size_bytes' => $file->getSize(),
-            'message_id' => null, // Will be linked when message is sent
+            'message_id' => null,
         ]);
     }
 
     /**
-     * Link valid attachment IDs to a message
+     * Link the caller's own orphaned attachments to a message (never someone else's).
      */
-    public function linkAttachmentsToMessage(int $messageId, array $attachmentIds): void
+    public function linkAttachmentsToMessage(int $messageId, int $userId, array $attachmentIds): void
     {
-        if (empty($attachmentIds)) {
+        if ($attachmentIds === []) {
             return;
         }
 
-        // We only link attachments that are currently orphaned to prevent stealing
         Attachment::whereIn('id', $attachmentIds)
+            ->where('user_id', $userId)
             ->whereNull('message_id')
             ->update(['message_id' => $messageId]);
     }

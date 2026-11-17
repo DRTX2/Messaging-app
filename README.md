@@ -39,6 +39,7 @@ We utilize a cutting-edge technology stack to ensure scalability, security, and 
 Nexus isn't just a chat app; it's a complete communication suite.
 
 *   **⚡ Instant Messaging**: Native WebSocket integration creates a "live" feel with zero latency.
+*   **📞 Voice & Video Calls**: 1:1 calls over WebRTC. The API only relays signalling (offer/answer/ICE) through the callee's private Reverb channel, so a call rings from any screen and media flows peer to peer. Accept, decline, mute, camera off, busy and missed-call handling.
 *   **👥 Group Implementation**: Robust many-to-many relationship handling for scalable group chats.
 *   **📁 Enterprise File Sharing**: Drag-and-drop uploads for images and documents with glassmorphic previews.
 *   **🔐 Military-Grade Auth**: Full JWT implementation with intercepted HTTP requests and auto-refresh mechanisms.
@@ -119,6 +120,16 @@ npm start # Runs on port 4200
 |:---:|:---:|
 | ![Empty State](docs/imgs/Screenshot_20260106_001740.png) | ![Mobile View](docs/imgs/Screenshot_20260106_001800.png) |
 | *Clean, distraction-free startup* | *Responsive mobile layout with attachments* |
+
+| **Incoming call** | **Video call** |
+|:---:|:---:|
+| ![Incoming call](docs/imgs/call-incoming.webp) | ![Video call](docs/imgs/call-active.webp) |
+| *Rings even when that chat isn't open* | *Peer-to-peer media, signalling over Reverb* |
+
+### Calls: how it works and its limits
+- `POST /api/conversations/{id}/calls/signal` validates the payload, checks the caller is a participant of a direct conversation, and broadcasts `CallSignal` on `private-App.Models.User.{callee}`. Only whitelisted SDP/ICE fields are relayed.
+- Covered by `backend/tests/Feature/CallSignalingTest.php` (relay, authorization, groups rejected, validation) and verified end to end with two Chrome instances using fake cameras.
+- Uses a public STUN server only. Peers behind symmetric NAT need a TURN server: add it as `iceServers` in `frontend/src/environments`. Group calls would need an SFU and are not implemented.
 
 ---
 

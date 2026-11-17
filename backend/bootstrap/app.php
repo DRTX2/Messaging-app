@@ -13,6 +13,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // An SDP must keep its trailing CRLF or browsers reject it.
+        $middleware->trimStrings(except: ['data.sdp']);
         $middleware->api(append: [
             \App\Http\Middleware\UpdateUserPresence::class,
         ]);

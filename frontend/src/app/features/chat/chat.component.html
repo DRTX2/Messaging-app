@@ -26,7 +26,8 @@
         [conversation]="conversation"
         (backClicked)="closeChat()"
         (clearClicked)="onClearChat()"
-        (leaveGroupClicked)="onLeaveGroup()">
+        (leaveGroupClicked)="onLeaveGroup()"
+        (callClicked)="callService.start(conversation.id, conversation.user.name, $event)">
       </app-chat-header>
 
       <!-- Message List -->
@@ -84,7 +85,9 @@
 <!-- Group Creation Modal -->
 @if (showGroupModal()) {
   <app-create-group-modal
-    (close)="showGroupModal.set(false)"
+    (closed)="showGroupModal.set(false)"
     (groupCreated)="onGroupCreated()">
   </app-create-group-modal>
 }
+
+<app-call-overlay />
