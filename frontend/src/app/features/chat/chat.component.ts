@@ -2,7 +2,7 @@ import { Component, signal, computed, effect, inject, HostListener, OnInit } fro
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
-import { AuthService, ChatService, WebSocketService } from '../../core/services';
+import { AuthService, CallService, ChatService, WebSocketService } from '../../core/services';
 import { 
   User, 
   Conversation, 
@@ -16,7 +16,8 @@ import {
   SidebarComponent,
   ChatHeaderComponent,
   MessageListComponent,
-  MessageInputComponent
+  MessageInputComponent,
+  CallOverlayComponent
 } from './components';
 
 import { CreateGroupModalComponent } from '../groups/create-group-modal/create-group-modal.component';
@@ -30,6 +31,7 @@ import { CreateGroupModalComponent } from '../groups/create-group-modal/create-g
     ChatHeaderComponent,
     MessageListComponent,
     MessageInputComponent,
+    CallOverlayComponent,
     CreateGroupModalComponent
   ],
   templateUrl: './chat.component.html',
@@ -38,6 +40,7 @@ export class ChatComponent implements OnInit {
   private authService = inject(AuthService);
   private chatService = inject(ChatService);
   private webSocketService = inject(WebSocketService);
+  readonly callService = inject(CallService);
   private router = inject(Router);
 
   // State
@@ -97,6 +100,7 @@ export class ChatComponent implements OnInit {
       if (!userId || !this.webSocketService.isConnected()) return;
 
       this.webSocketService.listenToInbox(userId, () => this.refreshInbox());
+      this.callService.init(userId);
       onCleanup(() => this.webSocketService.leaveInbox(userId));
     });
 

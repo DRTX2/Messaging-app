@@ -118,6 +118,11 @@ export class WebSocketService {
       .listen('MessageSent', (event: any) => callback(event.message));
   }
 
+  /** Incoming call signalling arrives on the user's own channel, so it rings from any screen. */
+  listenToCalls(userId: number, callback: (event: any) => void): void {
+    this.echo?.private(`App.Models.User.${userId}`).listen('.CallSignal', callback);
+  }
+
   leaveInbox(userId: number): void {
     this.echo?.leave(`App.Models.User.${userId}`);
   }

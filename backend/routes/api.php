@@ -40,6 +40,10 @@ Route::middleware(['auth:api', 'throttle:120,1'])->group(function(){
     // Typing indicator
     Route::post('/conversations/{conversation}/typing', [App\Http\Controllers\TypingController::class, 'typing']);
 
+    // Calls (WebRTC signalling; ICE candidates arrive in bursts, hence the higher limit)
+    Route::post('/conversations/{conversation}/calls/signal', [App\Http\Controllers\CallController::class, 'signal'])
+        ->withoutMiddleware('throttle:120,1')->middleware('throttle:600,1');
+
     // Chat routes
     Route::prefix('chat')->group(function () {
         Route::get('/', [ChatController::class, 'users']);
